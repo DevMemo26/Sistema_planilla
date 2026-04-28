@@ -19,6 +19,12 @@ class PagoCreate(BaseModel):
     concepto: str
     monto: float
 
+class MedicoCreate(BaseModel):
+    codigo: str
+    nombre: str
+    profesion: str
+    sueldo_base: float
+
 @app.get("/")
 def read_root():
     return {"mensaje": "Backend de Planilla Operativo."}
@@ -26,6 +32,28 @@ def read_root():
 @app.get("/pagos")
 def obtener_pagos(db: Session = Depends(get_db)):
     return db.query(models.PagoPlanilla).all()
+
+@app.get("/medicos")
+def obtener_medicos(db: Session = Depends(get_db)):
+    return db.query(models.Medico).all()
+
+@app.post("/medicos")
+def crear_medico(medico: MedicoCreate, db: Session = Depends(get_db)):
+    # Verificar si ya existe
+    db_medico = db.query(models.Medico).filter(models.Medico.codigo == medico.codigo).first()
+    if db_medico:
+        raise HTTPException(status_code=400, detail="El código de médico ya existe")
+    
+    nuevo_medico = models.Medico(
+        codigo=medico.codigo,
+        nombre=medico.nombre,
+        profesion=medico.profesion,
+        sueldo_base=medico.sueldo_base
+    )
+    db.add(nuevo_medico)
+    db.commit()
+    db.refresh(nuevo_medico)
+    return nuevo_medico
 
 @app.post("/pagos")
 def crear_pago(pago: PagoCreate, db: Session = Depends(get_db)):

@@ -157,7 +157,12 @@ class AplicacionRRHH:
         btn_tarjetas = tk.Button(right_header, text=" 🗂️ Tarjetas de Personal ", font=("Segoe UI", 10, "bold"), 
                            bg="#059669", fg="white", relief="flat", padx=15, pady=6, cursor="hand2",
                            command=self.mostrar_vista_tarjetas)
-        btn_tarjetas.pack(side=tk.LEFT)
+        btn_tarjetas.pack(side=tk.LEFT, padx=(0, 10))
+
+        btn_agregar_personal = tk.Button(right_header, text=" ➕ Agregar Personal ", font=("Segoe UI", 10, "bold"), 
+                           bg="#3b82f6", fg="white", relief="flat", padx=15, pady=6, cursor="hand2",
+                           command=self.mostrar_formulario_personal)
+        btn_agregar_personal.pack(side=tk.LEFT)
 
         card_tabla = tk.Frame(container, bg="white", highlightbackground="#e2e8f0", highlightthickness=1)
         card_tabla.pack(fill=tk.X, padx=60, pady=(0, 30))
@@ -223,17 +228,40 @@ class AplicacionRRHH:
 
     def cargar_datos(self):
         try:
-            respuesta = requests.get(f"{API_URL}/pagos")
-            respuesta.raise_for_status()
-            pagos = respuesta.json()
+            # 1. Obtener pagos y médicos del backend
+            resp_pagos = requests.get(f"{API_URL}/pagos")
+            resp_medicos = requests.get(f"{API_URL}/medicos")
+            
+            resp_pagos.raise_for_status()
+            resp_medicos.raise_for_status()
+            
+            pagos = resp_pagos.json()
+            medicos_db = resp_medicos.json()
 
+            # 2. Limpiar vistas antiguas
             for row in self.tabla.get_children(): self.tabla.delete(row)
-            if hasattr(self, 'container_tarjetas'):
-                for widget in self.container_tarjetas.winfo_children(): widget.destroy()
+            
+            # Verificar si el contenedor de tarjetas existe y sigue siendo válido
+            if hasattr(self, 'container_tarjetas') and self.container_tarjetas.winfo_exists():
+                for widget in self.container_tarjetas.winfo_children(): 
+                    widget.destroy()
 
+            # 3. Diccionario para agrupar (para las tarjetas)
             resumen_medicos = {}
+            
+            # Inicializar con los datos base de los médicos registrados
+            for m in medicos_db:
+                resumen_medicos[m["codigo"]] = {
+                    "nombre": m["nombre"],
+                    "profesion": m["profesion"],
+                    "sueldo_base": m["sueldo_base"],
+                    "comisiones_total": 0,
+                    "citas": []
+                }
 
+            # 4. Procesar pagos
             for p in pagos:
+                # --- Llenar Tabla Historial ---
                 medico_display = f"{p['nombre_medico']} ({p['codigo_medico']})"
                 estado_raw = p.get("estado", "Pagado").lower()
                 estado_display = estado_raw.capitalize()
@@ -246,32 +274,39 @@ class AplicacionRRHH:
                     estado_display
                 ), tags=(estado_raw,))
 
+                # --- Agrupar para las Tarjetas ---
                 codigo = p["codigo_medico"]
                 if codigo not in resumen_medicos:
-                    resumen_medicos[codigo] = {"nombre": p["nombre_medico"], "total": 0, "citas": []}
+                    # Si el médico no está registrado en 'medicos', lo agregamos con sueldo base 0
+                    resumen_medicos[codigo] = {"nombre": p["nombre_medico"], "profesion": "Médico", "sueldo_base": 0, "comisiones_total": 0, "citas": []}
                 
-                resumen_medicos[codigo]["total"] += p["monto"]
+                resumen_medicos[codigo]["comisiones_total"] += p["monto"]
                 resumen_medicos[codigo]["citas"].append(f"{p['concepto']} (${p['monto']:,.2f})")
 
-            if hasattr(self, 'container_tarjetas'):
+            # 5. Dibujar Tarjetas (si el contenedor existe y es válido)
+            if hasattr(self, 'container_tarjetas') and self.container_tarjetas.winfo_exists():
                 for codigo, info in resumen_medicos.items():
                     self.crear_tarjeta(codigo, info)
 
+            # Actualizar conteo
             self.lbl_conteo.config(text=f"Mostrando {len(pagos)} de {len(pagos)} registros")
 
         except Exception as e:
             messagebox.showerror("Error", f"No se pudieron cargar los datos: {str(e)}")
 
     def mostrar_vista_tarjetas(self):
+        # Crear ventana secundaria para las tarjetas
         self.win_tarjetas = tk.Toplevel(self.root)
         self.win_tarjetas.title("Tarjetas de Personal Médicos")
-        self.win_tarjetas.geometry("800x700")
+        self.win_tarjetas.geometry("900x800")
         self.win_tarjetas.configure(bg="#f8fafc")
 
+        # Header de la ventana
         header = tk.Frame(self.win_tarjetas, bg="white", height=70, highlightbackground="#e2e8f0", highlightthickness=1)
         header.pack(fill=tk.X)
         tk.Label(header, text="🗂️ Resumen de Personal Médico", font=("Segoe UI", 16, "bold"), fg="#1e293b", bg="white").pack(side=tk.LEFT, padx=30)
         
+        # Área Scrollable
         canvas = tk.Canvas(self.win_tarjetas, bg="#f8fafc", highlightthickness=0)
         scrollbar = ttk.Scrollbar(self.win_tarjetas, orient="vertical", command=canvas.yview)
         self.container_tarjetas = tk.Frame(canvas, bg="#f8fafc")
@@ -283,20 +318,43 @@ class AplicacionRRHH:
         canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=30, pady=20)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
+        # Cargar los datos para llenar las tarjetas
         self.cargar_datos()
 
     def crear_tarjeta(self, codigo, info):
-        card = tk.Frame(self.container_tarjetas, bg="white", highlightbackground="#e2e8f0", highlightthickness=1, padx=20, pady=20)
+        card = tk.Frame(self.container_tarjetas, bg="white", highlightbackground="#e2e8f0", highlightthickness=1, padx=25, pady=25)
         card.pack(fill=tk.X, pady=10)
 
         top_frame = tk.Frame(card, bg="white")
         top_frame.pack(fill=tk.X)
         
-        tk.Label(top_frame, text=info["nombre"], font=("Segoe UI", 13, "bold"), fg="#1e293b", bg="white").pack(side=tk.LEFT)
+        tk.Label(top_frame, text=info["nombre"], font=("Segoe UI", 14, "bold"), fg="#1e293b", bg="white").pack(side=tk.LEFT)
         tk.Label(top_frame, text=f"ID: {codigo}", font=("Segoe UI", 10), fg="#64748b", bg="white").pack(side=tk.RIGHT)
         
-        tk.Label(card, text=f"Monto Total Acumulado", font=("Segoe UI", 10), fg="#64748b", bg="white").pack(anchor="w", pady=(10, 0))
-        tk.Label(card, text=f"${info['total']:,.2f}", font=("Segoe UI", 18, "bold"), fg="#059669", bg="white").pack(anchor="w")
+        tk.Label(card, text=info["profesion"], font=("Segoe UI", 10, "italic"), fg="#059669", bg="white").pack(anchor="w", pady=(2, 10))
+        
+        # Detalles de Sueldo
+        frame_sueldos = tk.Frame(card, bg="#f8fafc", padx=15, pady=10)
+        frame_sueldos.pack(fill=tk.X, pady=10)
+        
+        # Sueldo Base
+        col1 = tk.Frame(frame_sueldos, bg="#f8fafc")
+        col1.pack(side=tk.LEFT, expand=True)
+        tk.Label(col1, text="Sueldo Base", font=("Segoe UI", 9), fg="#64748b", bg="#f8fafc").pack()
+        tk.Label(col1, text=f"${info['sueldo_base']:,.2f}", font=("Segoe UI", 12, "bold"), fg="#1e293b", bg="#f8fafc").pack()
+        
+        # Comisiones
+        col2 = tk.Frame(frame_sueldos, bg="#f8fafc")
+        col2.pack(side=tk.LEFT, expand=True)
+        tk.Label(col2, text="Comisiones", font=("Segoe UI", 9), fg="#64748b", bg="#f8fafc").pack()
+        tk.Label(col2, text=f"+ ${info['comisiones_total']:,.2f}", font=("Segoe UI", 12, "bold"), fg="#059669", bg="#f8fafc").pack()
+        
+        # Total
+        sueldo_total = info['sueldo_base'] + info['comisiones_total']
+        col3 = tk.Frame(frame_sueldos, bg="#f8fafc")
+        col3.pack(side=tk.LEFT, expand=True)
+        tk.Label(col3, text="Sueldo Total", font=("Segoe UI", 9), fg="#64748b", bg="#f8fafc").pack()
+        tk.Label(col3, text=f"${sueldo_total:,.2f}", font=("Segoe UI", 14, "bold"), fg="#10b981", bg="#f8fafc").pack()
 
         btn_detalle = tk.Button(card, text="Ver Detalle de Citas ➔", font=("Segoe UI", 9, "bold"), 
                               bg="#f1f5f9", fg="#1e293b", relief="flat", padx=15, pady=8, cursor="hand2",
@@ -314,14 +372,77 @@ class AplicacionRRHH:
         frame_lista = tk.Frame(detalle, bg="white")
         frame_lista.pack(fill=tk.BOTH, expand=True, padx=30)
 
-        for cita in info["citas"]:
-            item = tk.Frame(frame_lista, bg="white", pady=5)
-            item.pack(fill=tk.X)
-            tk.Label(item, text="•", font=("Segoe UI", 12), fg="#059669", bg="white").pack(side=tk.LEFT)
-            tk.Label(item, text=cita, font=("Segoe UI", 10), fg="#334155", bg="white", justify="left").pack(side=tk.LEFT, padx=10)
+        if not info["citas"]:
+            tk.Label(frame_lista, text="No hay comisiones registradas.", font=("Segoe UI", 10), fg="#94a3b8", bg="white").pack()
+        else:
+            for cita in info["citas"]:
+                item = tk.Frame(frame_lista, bg="white", pady=5)
+                item.pack(fill=tk.X)
+                tk.Label(item, text="•", font=("Segoe UI", 12), fg="#059669", bg="white").pack(side=tk.LEFT)
+                tk.Label(item, text=cita, font=("Segoe UI", 10), fg="#334155", bg="white", justify="left").pack(side=tk.LEFT, padx=10)
 
         tk.Frame(detalle, height=1, bg="#e2e8f0").pack(fill=tk.X, padx=30, pady=15)
-        tk.Label(detalle, text=f"Total Final: ${info['total']:,.2f}", font=("Segoe UI", 13, "bold"), fg="#059669", bg="white").pack(pady=(0, 30))
+        tk.Label(detalle, text=f"Total Comisiones: ${info['comisiones_total']:,.2f}", font=("Segoe UI", 13, "bold"), fg="#059669", bg="white").pack(pady=(0, 30))
+
+    def mostrar_formulario_personal(self):
+        self.win_personal = tk.Toplevel(self.root)
+        self.win_personal.title("Agregar Nuevo Personal")
+        self.win_personal.geometry("450x550")
+        self.win_personal.configure(bg="white")
+
+        tk.Label(self.win_personal, text="Nuevo Miembro del Personal", font=("Segoe UI", 16, "bold"), bg="white", fg="#1e293b").pack(pady=30)
+
+        fields = [
+            ("Código de Médico/Empleado", "entry_cod"),
+            ("Nombre Completo", "entry_nom"),
+            ("Profesión / Especialidad", "entry_prof"),
+            ("Sueldo Base ($)", "entry_sueldo")
+        ]
+
+        self.form_entries = {}
+        for label_text, attr_name in fields:
+            frame = tk.Frame(self.win_personal, bg="white", padx=40)
+            frame.pack(fill=tk.X, pady=10)
+            
+            tk.Label(frame, text=label_text, font=("Segoe UI", 9, "bold"), bg="white", fg="#475569").pack(anchor="w")
+            entry = tk.Entry(frame, font=("Segoe UI", 11), bg="#f8fafc", relief="flat", highlightbackground="#e2e8f0", highlightthickness=1)
+            entry.pack(fill=tk.X, ipady=8, pady=(5, 0))
+            self.form_entries[attr_name] = entry
+
+        btn_guardar = tk.Button(self.win_personal, text="Guardar Personal", command=self.guardar_personal, 
+                               bg="#3b82f6", fg="white", font=("Segoe UI", 11, "bold"), 
+                               relief="flat", activebackground="#2563eb", cursor="hand2", pady=12)
+        btn_guardar.pack(fill=tk.X, padx=40, pady=40)
+
+    def guardar_personal(self):
+        try:
+            cod = self.form_entries["entry_cod"].get()
+            nom = self.form_entries["entry_nom"].get()
+            prof = self.form_entries["entry_prof"].get()
+            sueldo = self.form_entries["entry_sueldo"].get()
+
+            if not cod or not nom:
+                messagebox.showwarning("Advertencia", "Código y Nombre son obligatorios.")
+                return
+
+            datos = {
+                "codigo": cod,
+                "nombre": nom,
+                "profesion": prof,
+                "sueldo_base": float(sueldo or 0)
+            }
+
+            resp = requests.post(f"{API_URL}/medicos", json=datos)
+            if resp.status_code == 200:
+                messagebox.showinfo("Éxito", "Personal agregado correctamente.")
+                self.win_personal.destroy()
+                self.cargar_datos()
+            else:
+                messagebox.showerror("Error", resp.json().get("detail", "No se pudo agregar."))
+        except ValueError:
+            messagebox.showerror("Error", "El sueldo base debe ser un número válido.")
+        except Exception as e:
+            messagebox.showerror("Error", f"Error de conexión: {str(e)}")
 
 
 if __name__ == "__main__":

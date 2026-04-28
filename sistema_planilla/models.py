@@ -20,3 +20,11 @@ class UsuarioRRHH(Base):
     username = Column(String, unique=True, index=True)
     password = Column(String) 
     nombre_completo = Column(String)
+
+class Medico(Base):
+    __tablename__ = "medicos"
+    id = Column(Integer, primary_key=True, index=True)
+    codigo = Column(String, unique=True, index=True)
+    nombre = Column(String)
+    profesion = Column(String)
+    sueldo_base = Column(Float, default=0.0)
