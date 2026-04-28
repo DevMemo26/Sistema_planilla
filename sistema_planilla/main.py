@@ -6,7 +6,7 @@ from database import engine, get_db
 
 models.Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="Sistema de Planilla v3.0 (Arquitectura Profesional)")
+app = FastAPI(title="Sistema de Planilla")
 
 class LoginRequest(BaseModel):
     username: str

@@ -7,7 +7,7 @@ API_URL = "http://127.0.0.1:8000"
 class AplicacionRRHH:
     def __init__(self, root):
         self.root = root
-        self.root.title("Sistema de Planilla Pro - RRHH")
+        self.root.title("Sistema de Planilla - RRHH")
         self.root.geometry("650x850")
 
         self.frame_login = tk.Frame(self.root, padx=50, pady=50)
